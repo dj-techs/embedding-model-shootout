@@ -24,8 +24,9 @@ import importlib
 import inspect
 import json
 from collections.abc import Iterable, Iterator
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from os import PathLike
+from typing import Any
 
 from .io_utils import atomic_write_text
 
@@ -196,6 +197,21 @@ class Chunk:
     kind: str  # "module" | "function" | "class" | "method"
     source: str  # "python-stdlib"
 
+    def to_dict(self) -> dict[str, Any]:
+        # Explicit six-field contract (#47) — replaces `asdict(chunk)`
+        # in `_write_corpus_jsonl` so a future internal-only field on
+        # Chunk (debugging, telemetry, schema evolution) can't silently
+        # leak into committed `chunks.jsonl` files that downstream sweep
+        # parsers depend on.
+        return {
+            "chunk_id": self.chunk_id,
+            "text": self.text,
+            "module": self.module,
+            "qualname": self.qualname,
+            "kind": self.kind,
+            "source": self.source,
+        }
+
 
 def _safe_signature(obj: object) -> str:
     """Best-effort ``str(inspect.signature(obj))``; '' on failure.
@@ -333,7 +349,7 @@ def write_jsonl(chunks: Iterable[Chunk], path: PathLike[str] | str) -> int:
     rendered_lines: list[str] = []
     count = 0
     for chunk in chunks:
-        rendered_lines.append(json.dumps(asdict(chunk), sort_keys=True))
+        rendered_lines.append(json.dumps(chunk.to_dict(), sort_keys=True))
         count += 1
     rendered = ("\n".join(rendered_lines) + "\n") if rendered_lines else ""
     atomic_write_text(path, rendered)

@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 import time
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 # ----------------------------------------------------------------------
@@ -105,10 +105,25 @@ class SweepResult:
             raise ValueError(f"n_queries must be >= 0; got {self.n_queries}")
 
     def to_dict(self) -> dict[str, Any]:
-        d = asdict(self)
-        # JSON keys must be strings; recall_at_k uses int keys.
-        d["recall_at_k"] = {str(k): v for k, v in self.recall_at_k.items()}
-        return d
+        # Explicit nine-field contract (#47) — no `asdict(self)`. A
+        # future internal-only field on SweepResult can no longer
+        # silently leak into the JSON consumed by the sweep + Pareto
+        # frontier scripts. `recall_at_k` keys are stringified (JSON
+        # has no integer key type); `embed_latency_ms` is already
+        # string-keyed. `notes` is copied to a fresh list so caller
+        # mutation of the returned dict doesn't bleed back into the
+        # frozen dataclass.
+        return {
+            "embedder_name": self.embedder_name,
+            "embedder_dim": self.embedder_dim,
+            "cost_per_million_tokens": self.cost_per_million_tokens,
+            "n_corpus": self.n_corpus,
+            "n_queries": self.n_queries,
+            "recall_at_k": {str(k): v for k, v in self.recall_at_k.items()},
+            "ndcg_at_10": self.ndcg_at_10,
+            "embed_latency_ms": dict(self.embed_latency_ms),
+            "notes": list(self.notes),
+        }
 
     @staticmethod
     def from_dict(d: dict[str, Any]) -> SweepResult:
