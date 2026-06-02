@@ -348,3 +348,18 @@ Three new tests in `tests/test_cli_sweep_run_out_alias.py`: `--out PATH` happy p
 **Open questions / blockers:** None — ready for review. Result-JSON validate (`sweep validate-results`) is a low-priority follow-up only if the pattern proves out further.
 
 **Next session:** Continue the day-session loop on another repo that hasn't been touched since 2026-05-27. `chunking-strategies-lab` is next in build-sequence order among the still-untouched repos and is the natural home for the next iteration.
+
+## 2026-06-02 — Issue #47: Chunk.to_dict + explicit SweepResult.to_dict
+**Duration:** ~18 min · **Branch:** `session/2026-06-02-0410-issue-47`
+
+- Closed the last two `dataclasses.asdict` usages in this repo:
+  - `emb_shootout/sweep.py`: `SweepResult.to_dict` was using `asdict(self)` with a `recall_at_k` post-processing step. Rewrote explicit field-by-field (9-field contract). Preserves the int→str transformation for `recall_at_k` keys (JSON has no integer key type). `notes` is shallow-copied so caller mutation doesn't bleed back into the frozen dataclass. `asdict` import dropped.
+  - `emb_shootout/corpus.py`: `Chunk` had no `to_dict` at all; the load-bearing `chunks.jsonl` artifact was shaped by raw `asdict(chunk)`. Added `Chunk.to_dict` (6-field contract); replaced the asdict call site in `_write_corpus_jsonl`. `asdict` import dropped.
+- 7 new tests: 4 in `test_sweep.py` (sorted-keys pin, `recall_at_k` key stringification, `from_dict` round-trip regression to confirm the explicit shape parses identically, notes list-copy guard) + 3 in `test_corpus.py` (Chunk sorted-keys pin, value round-trip, **`_write_corpus_jsonl` shape acceptance regression** asserting every JSONL row has the 6-field set). Full suite 298 → 305 pass. Ruff check + format clean.
+- `grep -rn asdict emb_shootout/ scripts/` returns only documentation references (the inline comments describing the prior shape). No source-level asdict serialization remains.
+
+**Why this work, this session:** Iteration 8 of the night session loop. Audit of recently-touched Python repos surfaced `embedding-model-shootout` as the last one in the observability-parity arc with remaining `asdict` reliance. Closing both surfaces completes the arc at six Python repos.
+
+**Open questions / blockers:** none — ready for review.
+
+**Next session:** Portfolio observability-parity arc is now fully saturated across all Python JSON-emitting repos at both package and script levels. Future iterations should pivot to either operator-blocked items or novel parity opportunities outside the asdict / to_dict arc.

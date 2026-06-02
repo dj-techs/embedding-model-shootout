@@ -483,3 +483,90 @@ def test_aggregate_markdown_byte_identical_to_prior_inline_implementation():
     assert "| embedder | dim | n_corpus | n_queries |" in md
     assert "recall@" in md
     assert "NDCG@10" in md
+
+
+# ----------------------------------------------------------------------
+# #47: SweepResult.to_dict — explicit field-by-field contract
+# (no dataclasses.asdict). Mirrors the observability-parity arc landed
+# across the Python repos.
+# ----------------------------------------------------------------------
+
+
+def test_sweep_result_to_dict_field_set_is_pinned():
+    r = SweepResult(
+        embedder_name="test",
+        embedder_dim=8,
+        cost_per_million_tokens=0.0,
+        n_corpus=10,
+        n_queries=5,
+        recall_at_k={1: 0.5, 5: 0.8, 10: 0.9},
+        ndcg_at_10=0.75,
+        embed_latency_ms={"corpus_total": 1.0, "query_p50": 0.1, "query_p95": 0.2},
+        notes=[],
+    )
+    d = r.to_dict()
+    assert sorted(d.keys()) == [
+        "cost_per_million_tokens",
+        "embed_latency_ms",
+        "embedder_dim",
+        "embedder_name",
+        "n_corpus",
+        "n_queries",
+        "ndcg_at_10",
+        "notes",
+        "recall_at_k",
+    ]
+
+
+def test_sweep_result_to_dict_recall_at_k_keys_stringified():
+    # JSON has no integer-key type — preserve the existing int→str
+    # transformation that the asdict-based to_dict carried.
+    r = SweepResult(
+        embedder_name="t",
+        embedder_dim=4,
+        cost_per_million_tokens=0.0,
+        n_corpus=10,
+        n_queries=5,
+        recall_at_k={1: 0.5, 5: 0.8, 10: 0.9},
+        ndcg_at_10=0.5,
+        embed_latency_ms={"corpus_total": 1.0, "query_p50": 0.1, "query_p95": 0.2},
+        notes=[],
+    )
+    d = r.to_dict()
+    assert sorted(d["recall_at_k"].keys()) == ["1", "10", "5"]
+    assert all(isinstance(k, str) for k in d["recall_at_k"])
+
+
+def test_sweep_result_to_dict_round_trips_through_from_dict():
+    # Acceptance regression: existing from_dict still parses the new
+    # explicit-field shape. The arc is internal refactor only.
+    original = SweepResult(
+        embedder_name="round-trip-test",
+        embedder_dim=16,
+        cost_per_million_tokens=0.12,
+        n_corpus=100,
+        n_queries=20,
+        recall_at_k={1: 0.6, 5: 0.85, 10: 0.92},
+        ndcg_at_10=0.78,
+        embed_latency_ms={"corpus_total": 5.0, "query_p50": 0.3, "query_p95": 0.7},
+        notes=["one", "two"],
+    )
+    restored = SweepResult.from_dict(original.to_dict())
+    assert restored == original
+
+
+def test_sweep_result_to_dict_notes_is_a_list_copy():
+    r = SweepResult(
+        embedder_name="t",
+        embedder_dim=4,
+        cost_per_million_tokens=0.0,
+        n_corpus=10,
+        n_queries=5,
+        recall_at_k={1: 0.5},
+        ndcg_at_10=0.5,
+        embed_latency_ms={"corpus_total": 1.0},
+        notes=["original"],
+    )
+    out = r.to_dict()
+    out["notes"].append("leaked")
+    assert "leaked" not in r.notes
