@@ -107,3 +107,60 @@ def test_full_default_modules_clears_10k_chunks():
 def test_each_module_contributes_at_least_one_chunk(module_name: str):
     chunks = list(build_corpus([module_name]))
     assert chunks, f"{module_name} produced no chunks"
+
+
+# ----------------------------------------------------------------------
+# #47: Chunk.to_dict — explicit field-by-field contract (no asdict).
+# ----------------------------------------------------------------------
+
+
+def test_chunk_to_dict_field_set_is_pinned():
+    c = Chunk(
+        chunk_id="os.path.join",
+        text="join(a, *p)\nJoin paths.",
+        module="os.path",
+        qualname="join",
+        kind="function",
+        source="python-stdlib",
+    )
+    d = c.to_dict()
+    assert sorted(d.keys()) == [
+        "chunk_id",
+        "kind",
+        "module",
+        "qualname",
+        "source",
+        "text",
+    ]
+
+
+def test_chunk_to_dict_values_round_trip():
+    c = Chunk(
+        chunk_id="json.loads",
+        text="loads(s)\nDeserialize JSON.",
+        module="json",
+        qualname="loads",
+        kind="function",
+        source="python-stdlib",
+    )
+    assert c.to_dict() == {
+        "chunk_id": "json.loads",
+        "text": "loads(s)\nDeserialize JSON.",
+        "module": "json",
+        "qualname": "loads",
+        "kind": "function",
+        "source": "python-stdlib",
+    }
+
+
+def test_write_jsonl_uses_chunk_to_dict_shape(tmp_path: Path):
+    # Acceptance regression: every line in the JSONL output has the
+    # exact field set that Chunk.to_dict pins. Catches a future drift
+    # where _write_corpus_jsonl re-introduces asdict.
+    out = tmp_path / "chunks.jsonl"
+    count = write_jsonl(build_corpus(("math",)), out)
+    assert count > 0
+    expected_keys = ["chunk_id", "kind", "module", "qualname", "source", "text"]
+    for line in out.read_text(encoding="utf-8").strip().split("\n"):
+        row = json.loads(line)
+        assert sorted(row.keys()) == expected_keys
