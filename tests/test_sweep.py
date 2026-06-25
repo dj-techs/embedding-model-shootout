@@ -221,6 +221,59 @@ def test_run_sweep_validates_inputs():
         run_sweep(_CORPUS, qs, embedder=p, k_values=())
 
 
+# A non-finite embedding component makes cosine() return NaN, whose all-False
+# comparisons scramble retrieve_top_k's ranking — yet recall = hits/n_queries
+# stays in [0,1], so the SweepResult guard (#62) can't catch it. run_sweep must
+# reject corrupt vectors at the embedder-output seam (where the length check is).
+class _PoisonEmbedder:
+    """Stub Embedder that injects one non-finite component into a chosen vector.
+
+    `poison="corpus"` taints the first corpus vector; `poison="query"` taints
+    the first query vector. Otherwise behaves like a tiny finite embedder.
+    """
+
+    name = "poison-embedder"
+    dim = 3
+    cost_per_million_tokens = 0.0
+
+    def __init__(self, *, poison: str, bad: float = float("nan")) -> None:
+        self._poison = poison
+        self._bad = bad
+        self._corpus_calls = 0
+
+    def embed(self, texts):
+        # A batch of >1 is the corpus embed; single-text calls are per-query.
+        is_corpus = len(texts) > 1
+        out = [[0.1, 0.2, 0.3] for _ in texts]
+        if is_corpus and self._poison == "corpus":
+            out[0][1] = self._bad
+        if not is_corpus and self._poison == "query":
+            out[0][0] = self._bad
+        return out
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_run_sweep_rejects_non_finite_corpus_vector(bad: float):
+    qs = build_queries(_CORPUS, n=3, seed=1)
+    with pytest.raises(ValueError, match=r"non-finite component in corpus vector 0 at dim 1"):
+        run_sweep(_CORPUS, qs, embedder=_PoisonEmbedder(poison="corpus", bad=bad))
+
+
+def test_run_sweep_rejects_non_finite_query_vector():
+    qs = build_queries(_CORPUS, n=3, seed=1)
+    with pytest.raises(ValueError, match=r"non-finite component in query vector 0 at dim 0"):
+        run_sweep(_CORPUS, qs, embedder=_PoisonEmbedder(poison="query"))
+
+
+def test_run_sweep_accepts_finite_stub_embedder():
+    # The guard must not reject a clean finite embedder — the poison stub with
+    # no poisoning runs end-to-end and returns an in-range recall.
+    qs = build_queries(_CORPUS, n=3, seed=1)
+    result = run_sweep(_CORPUS, qs, embedder=_PoisonEmbedder(poison="none"))
+    for v in result.recall_at_k.values():
+        assert 0.0 <= v <= 1.0
+
+
 # ----------------------------------------------------------------------
 # k_values per-element guard (#27)
 # ----------------------------------------------------------------------
