@@ -464,3 +464,16 @@ gaps that surfaced (e.g., bench-script `--out` in rag-production-kit).
 **Open questions / blockers:** none.
 
 **Next session:** pareto.py / plot.py / the provider modules remain the dogfood frontier; `embed_latency_ms` value validation is a small deferred follow-up.
+
+---
+## 2026-06-25 — Issue #63: reject a non-finite embedder vector in run_sweep
+**Duration:** ~18 min · **Branch:** `session/2026-06-25-2342-issue-63`
+
+- `run_sweep` checked the embedder's output length but not component finiteness. A single `NaN`/`Inf` component makes `cosine()` return `NaN`, whose all-False comparisons scramble `retrieve_top_k`'s sort — yet `recall = hits/n_queries` and the averaged NDCG stay finite and in `[0,1]`, so the `SweepResult` guard (#62) can't catch it and the benchmark reports plausible-but-wrong numbers.
+- Fix: a `_reject_non_finite_vectors` guard at the embedder-output seam (beside the existing length check), for both corpus and query vectors, naming the offending vector + dim. The hot `cosine` path is left untouched so latency numbers are unaffected — the agent-proposed in-cosine guard would have taxed the very latencies the tool measures. Mirrors prompt-regression's `NonFiniteEmbeddingError` seam. Five tests; red-green verified (without the guard all four corrupt cases produced a finished `SweepResult`). Suite 349 → 354, ruff clean.
+
+**Why this work, this session:** fourth and final issue of a multi-issue DAY session. With the priority-tier real bugs exhausted, a strict defensive-gap sweep across the research/perf repos surfaced this — the established non-finite hardening arc (#29/#31/#61/#62) guarded the *metrics* but not the embedder's raw output vectors.
+
+**Open questions / blockers:** none.
+
+**Next session:** the non-finite hardening arc now covers comparator inputs through to output metrics; `embed`-latency finiteness was considered and deferred (different domain — latency, not a [0,1] rate).
