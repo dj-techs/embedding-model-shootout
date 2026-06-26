@@ -120,6 +120,18 @@ class SweepResult:
             raise ValueError(
                 f"ndcg_at_10 must be a finite number in [0, 1]; got {self.ndcg_at_10!r}"
             )
+        # `embed_latency_ms` is the one numeric field the guards above overlooked
+        # (#65). `from_dict` coerces with `float(v)`, which accepts the JSON
+        # tokens "Infinity"/"NaN", so a hand-edited or externally-generated result
+        # carries a non-finite latency straight into the markdown table and the
+        # JSON aggregate — an invalid-JSON Infinity/NaN token or a fabricated
+        # latency number. A latency is physically finite and non-negative; reject
+        # like the recall_at_k loop above (#31).
+        for k, v in self.embed_latency_ms.items():
+            if not isinstance(v, (int, float)) or isinstance(v, bool):
+                raise ValueError(f"embed_latency_ms[{k!r}] must be a number; got {v!r}")
+            if not math.isfinite(v) or v < 0.0:
+                raise ValueError(f"embed_latency_ms[{k!r}] must be a finite number >= 0; got {v!r}")
 
     def to_dict(self) -> dict[str, Any]:
         # Explicit nine-field contract (#47) — no `asdict(self)`. A
