@@ -703,3 +703,21 @@ context_for_next_session:
 decisions_made: []
 followups: []
 ---
+
+---
+session: 2026-06-26T03:40Z
+duration_min: 15
+issue: 65
+focus: sweepresult_embed_latency_ms_finiteness_guard_last_unguarded_numeric_field
+phase: night_session_phase_b_issue_6
+delta:
+  files_changed: 2 # emb_shootout/sweep.py + tests/test_sweep.py
+  tests_added: 4   # nan/+inf/-inf/neg rejected + non-numeric + from_dict roundtrip inf + finite accept
+context_for_next_session:
+  - found_via_night_phase_a_dogfood_explore_agent_hand_verified_embed_latency_ms_was_the_one_numeric_sweepresult_field_without_the_31_finiteness_guard_siblings_cost_recall_ndcg_have
+  - root_cause_post_init_72_122_guards_cost_85_recall_112_116_ndcg_117_121_but_not_embed_latency_ms_69_from_dict_155_float_v_accepts_json_tokens_infinity_nan_renders_into_markdown_table_395_397_and_json_aggregate_421_423
+  - fix_added_embed_latency_ms_loop_guard_at_end_of_post_init_number_check_plus_math_isfinite_plus_ge_0_matching_recall_at_k_loop_style_latency_physically_finite_nonneg
+  - tests_param_nan_inf_neg_inf_neg_rejected_plus_non_numeric_plus_from_dict_roundtrip_tampered_inf_rejected_plus_finite_dict_accept_full_suite_green_ruff_clean
+  - sibling_of_vector_search_55_and_rag_80_invalid_json_infinity_nan_token_in_dump_class
+decisions_made: []
+followups: []
