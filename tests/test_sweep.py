@@ -532,6 +532,48 @@ def test_sweep_result_from_dict_round_trip_rejects_corrupt_recall():
         SweepResult.from_dict(serialized)
 
 
+# Issue #65: embed_latency_ms was the one numeric SweepResult field without the
+# #31 finiteness guard. from_dict's float(v) accepts "Infinity"/"NaN", which then
+# render in the markdown table / JSON aggregate. Latency is finite and >= 0.
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf"), -0.001])
+def test_sweep_result_rejects_non_finite_or_negative_latency(bad: float):
+    kwargs = _valid_sweep_result_kwargs()
+    kwargs["embed_latency_ms"] = {"corpus_total": bad}
+    with pytest.raises(
+        ValueError, match=r"embed_latency_ms\['corpus_total'\] must be a finite number >= 0"
+    ):
+        SweepResult(**kwargs)
+
+
+def test_sweep_result_rejects_non_numeric_latency():
+    kwargs = _valid_sweep_result_kwargs()
+    kwargs["embed_latency_ms"] = {"query_p50": "fast"}
+    with pytest.raises(ValueError, match=r"embed_latency_ms\['query_p50'\] must be a number"):
+        SweepResult(**kwargs)
+
+
+def test_sweep_result_from_dict_round_trip_rejects_corrupt_latency():
+    # The from_dict read path is protected too: a tampered result JSON whose
+    # embed_latency_ms carries inf can't render an Infinity token into the dump.
+    provider = HashEmbedderProvider()
+    qs = build_queries(_CORPUS, n=5, seed=1)
+    original = run_sweep(_CORPUS, qs, embedder=provider)
+    serialized = json.loads(json.dumps(original.to_dict()))
+    serialized["embed_latency_ms"]["corpus_total"] = float("inf")
+    with pytest.raises(
+        ValueError, match=r"embed_latency_ms\['corpus_total'\] must be a finite number >= 0"
+    ):
+        SweepResult.from_dict(serialized)
+
+
+def test_sweep_result_accepts_valid_latency_dict():
+    # The clean path is unaffected: a finite, non-negative latency dict constructs.
+    kwargs = _valid_sweep_result_kwargs()
+    kwargs["embed_latency_ms"] = {"corpus_total": 12.0, "query_p50": 0.0, "query_p95": 3.5}
+    result = SweepResult(**kwargs)
+    assert result.embed_latency_ms["query_p50"] == 0.0
+
+
 def test_aggregate_markdown_renders_one_row_per_result():
     provider1 = HashEmbedderProvider(dim=64, ngram=1)
     provider2 = HashEmbedderProvider(dim=128, ngram=2)
