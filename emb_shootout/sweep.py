@@ -173,6 +173,31 @@ def cosine(a: list[float], b: list[float]) -> float:
     return dot / (na * nb)
 
 
+def _reject_non_finite_vectors(
+    vectors: list[list[float]], *, embedder_name: str, kind: str
+) -> None:
+    """Fail loud if any component of any vector is non-finite (NaN/Inf).
+
+    A single non-finite component makes `cosine` return NaN, and a NaN
+    similarity compares False against everything, so `retrieve_top_k`'s sort
+    leaves the ranking scrambled. The resulting `recall = hits / n_queries`
+    (and averaged NDCG) are still finite values in [0, 1], so the SweepResult
+    finiteness/range guard (#62) cannot catch the corruption — the benchmark
+    would report plausible-but-wrong numbers. Reject at the embedder-output
+    seam (where the length check already lives), not inside the hot `cosine`
+    path, matching prompt-regression-suite's `NonFiniteEmbeddingError` seam.
+    """
+    for vi, vec in enumerate(vectors):
+        for ci, v in enumerate(vec):
+            if not math.isfinite(v):
+                raise ValueError(
+                    f"embedder {embedder_name!r} returned a non-finite component in "
+                    f"{kind} vector {vi} at dim {ci}: {v!r}. A NaN/Inf embedding "
+                    "scrambles the cosine ranking and yields plausible-but-wrong "
+                    "recall/NDCG; fix the embedder or re-run."
+                )
+
+
 def ndcg_at_k(relevances: list[int], k: int) -> float:
     """DCG@k / iDCG@k for binary relevance.
 
@@ -294,6 +319,7 @@ def run_sweep(
         raise ValueError(
             f"embedder returned {len(corpus_vectors)} vectors for {len(corpus_texts)} texts"
         )
+    _reject_non_finite_vectors(corpus_vectors, embedder_name=embedder.name, kind="corpus")
 
     # Embed queries one at a time so we can capture per-query latency.
     query_latencies_ms: list[float] = []
@@ -303,6 +329,7 @@ def run_sweep(
         vec = embedder.embed([q.text])[0]
         query_latencies_ms.append((time.perf_counter() - t0) * 1000.0)
         query_vectors.append(vec)
+    _reject_non_finite_vectors(query_vectors, embedder_name=embedder.name, kind="query")
 
     # Compute hits per query at each k, plus NDCG@10.
     hits_at_k: dict[int, int] = dict.fromkeys(k_values, 0)
